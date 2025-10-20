@@ -13,14 +13,22 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 def ask_chatgpt(message, system_prompt=None):
     url = 'https://api.openai.com/v1/chat/completions'
-    headers = {'Authorization': f'Bearer ' + OPENAI_API_KEY}
+    headers = {'Authorization': f'Bearer {OPENAI_API_KEY}'}
     messages = []
     if system_prompt:
         messages.append({'role': 'system', 'content': system_prompt})
     messages.append({'role': 'user', 'content': message})
     payload = {'model': 'gpt-3.5-turbo', 'messages': messages}
     response = requests.post(url, json=payload, headers=headers)
-    return response.json()['choices'][0]['message']['content']
+
+    try:
+        result = response.json()
+        if 'choices' in result:
+            return result['choices'][0]['message']['content']
+        else:
+            return f"❌ خطا از سمت OpenAI:\n{result.get('error', {}).get('message', 'پاسخی دریافت نشد')}"
+    except Exception as e:
+        return f"❌ خطا در پردازش پاسخ:\n{str(e)}"
 
 def analyze_excel(file_bytes):
     df = pd.read_excel(BytesIO(file_bytes))
@@ -42,15 +50,16 @@ def suggest_customers_for_new_drug(drug_name, df):
 @app.route('/', methods=['POST'])
 def webhook():
     data = request.get_json()
-    if not data or 'message' not in data:
+    message = data.get('message') or data.get('edited_message')
+    if not message:
         return 'no message', 400
 
-    chat_id = data['message']['chat']['id']
-    text = data['message'].get('text', '')
+    chat_id = message['chat']['id']
+    text = message.get('text', '')
     reply = '❓ پیام نامشخص بود.'
 
-    if 'document' in data['message']:
-        file_id = data['message']['document']['file_id']
+    if 'document' in message:
+        file_id = message['document']['file_id']
         file_info = requests.get(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={file_id}').json()
         file_path = file_info['result']['file_path']
         file_url = f'https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}'
