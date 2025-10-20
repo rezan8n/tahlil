@@ -30,126 +30,153 @@ logger.info(f"GEMINI_API_KEY: {'✅ SET' if GEMINI_API_KEY else '❌ NOT SET'}")
 logger.info("=" * 50)
 
 def ask_gemini(message, system_prompt=None):
-    """Google Gemini API"""
+    """Google Gemini API - برای همه نوع سوال"""
     if not GEMINI_API_KEY:
         return "❌ Gemini API Key تنظیم نشده"
     
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={GEMINI_API_KEY}'
     
-    # ساختار پیام
-    full_message = message
+    # ساختار پیام برای Gemini
+    contents = []
+    
     if system_prompt:
-        full_message = f"{system_prompt}\n\n{message}"
+        contents.append({
+            "parts": [{"text": system_prompt}],
+            "role": "user"
+        })
+    
+    contents.append({
+        "parts": [{"text": message}],
+        "role": "user"
+    })
     
     payload = {
-        "contents": [{
-            "parts": [{"text": full_message}]
-        }],
+        "contents": contents,
         "generationConfig": {
             "temperature": 0.7,
-            "maxOutputTokens": 1000
+            "maxOutputTokens": 2000,
+            "topP": 0.8,
+            "topK": 40
         }
     }
     
     try:
-        logger.info(f"ارسال درخواست به Gemini: {message[:50]}...")
-        response = requests.post(url, json=payload, timeout=30)
+        logger.info(f"ارسال درخواست به Gemini: {message[:100]}...")
+        response = requests.post(url, json=payload, timeout=45)
         
         logger.info(f"Gemini Status Code: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
             if 'candidates' in result and len(result['candidates']) > 0:
-                reply = result['candidates'][0]['content']['parts'][0]['text']
-                logger.info(f"✅ پاسخ موفق از Gemini")
-                return reply
+                if 'content' in result['candidates'][0] and 'parts' in result['candidates'][0]['content']:
+                    reply = result['candidates'][0]['content']['parts'][0]['text']
+                    logger.info(f"✅ پاسخ موفق از Gemini")
+                    return reply
+                else:
+                    return "❌ ساختار پاسخ Gemini نامعتبر است"
             else:
-                return "❌ ساختار پاسخ Gemini نامعتبر است"
+                return "❌ پاسخی از Gemini دریافت نشد"
         elif response.status_code == 429:
-            return "❌ سقف استفاده رایگان تمام شده (60 درخواست/روز)"
+            return "❌ سقف استفاده رایگان تمام شده (60 درخواست/روز). لطفاً فردا مجدد تلاش کنید."
+        elif response.status_code == 400:
+            error_msg = response.json().get('error', {}).get('message', 'خطای نامشخص')
+            return f"❌ خطا در درخواست: {error_msg}"
         else:
             return f"❌ خطا از Gemini: {response.status_code}"
             
+    except requests.exceptions.Timeout:
+        return "❌ timeout در ارتباط با Gemini"
     except Exception as e:
-        return f"❌ خطا در اتصال به Gemini: {str(e)}"
+        return f"❌ خطا در اتصال: {str(e)}"
 
-def ask_ai(message, system_prompt=None):
-    """سیستم پاسخ‌دهی هوشمند"""
-    message_lower = message.lower().strip()
+def detect_intent(text, df=None):
+    """تشخیص نیت کاربر"""
+    text_lower = text.lower()
     
-    # تشخیص نیت کاربر و پاسخ هوشمند
-    if message_lower in ['سلام', 'hello', 'hi', 'سلامی', 'salam']:
-        return 'سلام! خوش اومدی! 🙏\nمن ربات تحلیل فایل‌های اکسل هستم.\nمی‌تونی فایل اکسل رو برام بفرستی یا از راهنما استفاده کنی.'
+    # کلمات کلیدی مربوط به تحلیل داده
+    data_keywords = [
+        'تحلیل', 'آنالیز', 'فروش', 'کالا', 'محصول', 'مشتری', 'داده', 'اکسل',
+        'فایل', 'جدول', 'آمار', 'آمارها', 'گزارش', 'نتایج', 'تحلیل کن',
+        'چند تا', 'چقدر', 'میانگین', 'مجموع', 'مقدار', 'تعداد'
+    ]
     
-    elif any(word in message_lower for word in ['چطوری', 'حالت', 'چخبر', 'خوبی']):
-        return 'خوبم ممنون! 😊\nآماده‌ام که فایل اکسلتو تحلیل کنم.'
+    # اگر فایل اکسل داریم و سوال مربوط به داده‌هاست
+    if df is not None and any(keyword in text_lower for keyword in data_keywords):
+        return "data_analysis"
     
-    elif any(word in message_lower for word in ['تحلیل', 'آنالیز', 'analys']):
-        return '📊 می‌تونی فایل اکسل رو برام بفرستی تا:\n• جمع فروش رو محاسبه کنم\n• پرفروش‌ترین کالاها رو پیدا کنم\n• مشتریان بالقوه رو شناسایی کنم'
-    
-    elif any(word in message_lower for word in ['فروش', 'sale', 'فروش']):
-        return '💰 برای تحلیل فروش، فایل اکسل حاوی اطلاعات فروش رو برام بفرست.'
-    
-    elif any(word in message_lower for word in ['کالا', 'محصول', 'product', 'item']):
-        return '🏆 می‌تونم پرفروش‌ترین کالاها رو از فایل اکسلت پیدا کنم.'
-    
-    elif any(word in message_lower for word in ['مشتری', 'customer', 'client']):
-        return '👥 برای شناسایی مشتریان بالقوه، فایل اکسل رو برام بفرست.'
-    
-    elif any(word in message_lower for word in ['دارو', 'داروی جدید', 'drug', 'medicine']):
-        if 'داروی جدید' in message_lower:
-            drug_name = message.replace('داروی جدید', '').strip()
-            if drug_name:
-                return f'💊 برای داروی "{drug_name}" می‌تونم مشتریان بالقوه رو پیدا کنم. فایل اکسل رو برام بفرست.'
-            else:
-                return '💊 نام داروی جدید رو بنویس تا مشتریان بالقوه رو پیشنهاد بدم.\nمثال: "داروی جدید پنی سیلین"'
-        else:
-            return '💊 در مورد داروها می‌تونم کمک کنم. از "داروی جدید" استفاده کن.'
-    
-    elif any(word in message_lower for word in ['کمک', 'راهنما', 'help', 'راهنمایی']):
-        return '''🤖 راهنمای ربات:
+    # اگر سوال عمومی است
+    return "general_question"
 
-📁 **ارسال فایل اکسل:**
-• فایل اکسل فروش رو بفرست تا خودکار تحلیل کنم
+def analyze_data_with_ai(question, df):
+    """تحلیل داده‌ها با هوش مصنوعی"""
+    try:
+        # خلاصه‌ای از داده‌ها برای AI
+        data_summary = f"""
+        داده‌های موجود:
+        - تعداد ردیف‌ها: {len(df)}
+        - تعداد ستون‌ها: {len(df.columns)}
+        - نام ستون‌ها: {', '.join(df.columns.tolist())}
+        - نمونه‌ای از داده‌ها: {df.head(3).to_string()}
+        
+        سوال کاربر: {question}
+        
+        لطفاً بر اساس داده‌های فوق به سوال کاربر پاسخ دهید.
+        اگر اطلاعات کافی نیست، بگویید چه داده‌ای نیاز دارید.
+        """
+        
+        return ask_gemini(data_summary, "شما یک تحلیل‌گر داده هستید.")
+        
+    except Exception as e:
+        return f"❌ خطا در تحلیل داده: {str(e)}"
 
-💬 **دستورات متنی:**
-• "تحلیل فروش" - اطلاعات کلی
-• "پرفروش‌ترین کالا" - کالاهای پرطرفدار  
-• "داروی جدید [نام]" - مشتریان بالقوه
-
-🎯 **کارهایی که می‌تونم انجام بدم:**
-• محاسبه جمع فروش
-• پیدا کردن پرفروش‌ترین کالاها
-• شناسایی مشتریان بالقوه
-• تحلیل داده‌های دارویی
-
-فایل اکسلت رو بفرست شروع کنیم! 📊'''
+def ask_ai(message, df=None):
+    """دستیار هوشمند اصلی"""
     
-    elif any(word in message_lower for word in ['تشکر', 'ممنون', 'مرسی', 'thanks', 'thank you']):
-        return 'خوشحالم که مفید بودم! 😊\nاگر سوال دیگه‌ای داری در خدمتم.'
+    # تشخیص نیت کاربر
+    intent = detect_intent(message, df)
     
-    elif any(word in message_lower for word in ['خداحافظ', 'بای', 'bye', 'goodbye']):
-        return 'خداحافظ! 🙋‍♂️\nاگر فایل اکسل داری، خوشحال می‌شم تحلیلش کنم.'
+    if intent == "data_analysis" and df is not None:
+        # تحلیل داده‌های اکسل با AI
+        logger.info("تشخیص: تحلیل داده‌های اکسل")
+        return analyze_data_with_ai(message, df)
     
     else:
-        # برای سوالات دیگر، از Gemini استفاده کن
-        gemini_result = ask_gemini(message, system_prompt)
-        if not gemini_result.startswith('❌'):
-            return gemini_result
-        else:
-            return f'''🤔 سوال جالبی پرسیدی!
+        # سوال عمومی - پاسخ با AI
+        logger.info("تشخیص: سوال عمومی")
+        
+        # پرامپت برای دستیار همه‌کاره
+        system_prompt = """
+        شما یک دستیار هوشمند و مفید هستید. به کاربر با زبانی دوستانه و محترمانه پاسخ دهید.
+        
+        ویژگی‌های شما:
+        - پاسخ‌های دقیق و مفید
+        - زبان فارسی روان و سلیس
+        - توضیحات کامل اما مختصر
+        - در صورت نیاز، پیشنهادات عملی
+        - برای سوالات تخصصی، توضیح ساده و قابل فهم
+        
+        اگر سوالی خارج از تخصص شماست، صادقانه بگویید و راهنمایی کنید.
+        """
+        
+        result = ask_gemini(message, system_prompt)
+        
+        # اگر Gemini خطا داد، پاسخ fallback
+        if result.startswith('❌'):
+            return f"""🤖 سوال جالبی پرسیدی: "{message}"
 
-در حال حاضر سرویس پاسخ به سوالات متنی موقتاً در دسترس نیست. اما می‌تونم:
+متأسفانه سرویس هوش مصنوعی در حال حاضر در دسترس نیست. 
+اما هنوز می‌تونم فایل‌های اکسل تو رو تحلیل کنم!
 
-📊 فایل اکسلتو تحلیل کنم
-💰 گزارش فروش برات تهیه کنم  
-🏆 پرفروش‌ترین کالاها رو پیدا کنم
-👥 مشتریان بالقوه رو شناسایی کنم
+📁 فایل اکسل رو برام بفرست تا:
+• داده‌هات رو تحلیل کنم
+• به سوالاتت در مورد داده‌ها پاسخ بدم
+• گزارش‌های مفید برات تهیه کنم"""
 
-فایل اکسلت رو برام بفرست یا از "راهنما" استفاده کن!'''
+        return result
 
-def analyze_excel(df):
-    """تحلیل فایل اکسل"""
+def analyze_excel_basic(df):
+    """تحلیل پایه فایل اکسل"""
     try:
         df.columns = df.columns.str.strip()
         
@@ -159,64 +186,10 @@ def analyze_excel(df):
         analysis_parts.append(f"تعداد ستون‌ها: {len(df.columns)}")
         analysis_parts.append(f"ستون‌ها: {', '.join(df.columns.tolist())}")
         
-        # تحلیل ستون‌های خاص
-        if 'جمع کل خالص' in df.columns:
-            try:
-                df['جمع کل خالص'] = df['جمع کل خالص'].replace(',', '', regex=True).astype(float)
-                total_sales = df['جمع کل خالص'].sum()
-                analysis_parts.append(f"💰 مجموع فروش: {int(total_sales):,} تومان")
-            except:
-                analysis_parts.append("⚠️ ستون 'جمع کل خالص' قابل تحلیل نیست")
-        
-        if 'شرح کالا' in df.columns:
-            try:
-                top_items = df['شرح کالا'].value_counts().head(3)
-                analysis_parts.append("🏆 پرتکرارترین کالاها:")
-                for item, count in top_items.items():
-                    analysis_parts.append(f"  • {item}: {count} بار")
-            except:
-                pass
-        
-        if 'نام مشتری' in df.columns:
-            try:
-                top_customers = df['نام مشتری'].value_counts().head(3)
-                analysis_parts.append("👥 پرتکرارترین مشتریان:")
-                for customer, count in top_customers.items():
-                    analysis_parts.append(f"  • {customer}: {count} بار")
-            except:
-                pass
-        
         return '\n'.join(analysis_parts)
         
     except Exception as e:
         return f'❌ خطا در تحلیل فایل: {str(e)}'
-
-def suggest_customers_for_new_drug(drug_name, df):
-    """پیشنهاد مشتریان برای داروی جدید"""
-    try:
-        df.columns = df.columns.str.strip()
-        
-        # پیدا کردن مشتریان مرتبط
-        similar_rows = df[df['شرح کالا'].str.contains(drug_name.split()[0], case=False, na=False)]
-        
-        if len(similar_rows) == 0:
-            return f"📦 برای داروی '{drug_name}' مشابهی در داده‌ها پیدا نشد."
-        
-        customers = similar_rows['نام مشتری'].value_counts().head(5).index.tolist()
-        
-        result = [
-            f"💊 داروی جدید: {drug_name}",
-            f"🔍 {len(similar_rows)} تراکنش مشابه پیدا شد",
-            "👥 مشتریان بالقوه:"
-        ]
-        
-        for i, customer in enumerate(customers, 1):
-            result.append(f"  {i}. {customer}")
-            
-        return '\n'.join(result)
-        
-    except Exception as e:
-        return f"❌ خطا در تحلیل دارو: {str(e)}"
 
 @app.route('/', methods=['POST'])
 def webhook():
@@ -232,6 +205,9 @@ def webhook():
         chat_id = message['chat']['id']
         text = message.get('text', '')
         reply = '❓ پیام نامشخص بود.'
+
+        # ذخیره فایل اکسل برای تحلیل‌های بعدی
+        current_df = None
 
         if message.get('document'):
             # پردازش فایل اکسل
@@ -265,18 +241,16 @@ def webhook():
                 return 'ok'
 
             if df is not None:
-                # تشخیص نیت کاربر از متن
-                if 'داروی جدید' in text.lower():
-                    drug_name = text.replace('داروی جدید', '').strip()
-                    if drug_name:
-                        reply = suggest_customers_for_new_drug(drug_name, df)
-                    else:
-                        reply = "لطفاً نام داروی جدید را بنویسید. مثال: 'داروی جدید پنی سیلین'"
-                else:
-                    reply = analyze_excel(df)
+                current_df = df
+                reply = analyze_excel_basic(df)
+                reply += "\n\n💡 حالا می‌تونی در مورد داده‌ها سوال کنی! مثلاً:"
+                reply += "\n• 'پرفروش‌ترین کالا کدومه؟'"
+                reply += "\n• 'مجموع فروش چقدر شده؟'"
+                reply += "\n• 'آمار مشتریان رو بگو'"
+
         else:
             # پردازش پیام متنی
-            reply = ask_ai(text)
+            reply = ask_ai(text, current_df)
 
         # ارسال پاسخ به کاربر
         requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
@@ -289,7 +263,7 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def home():
-    return '🤖 ربات فعال است!'
+    return '🤖 دستیار هوشمند فعال است!'
 
 @app.route('/debug', methods=['GET'])
 def debug():
@@ -298,20 +272,28 @@ def debug():
         "status": "active",
         "telegram_token_set": bool(TELEGRAM_TOKEN),
         "gemini_key_set": bool(GEMINI_API_KEY),
-        "message": "ربات با پاسخ‌های هوشمند فعال است"
+        "message": "دستیار هوشمند کامل فعال است"
     }
     return jsonify(debug_info)
 
-@app.route('/test-gemini', methods=['GET'])
-def test_gemini():
-    """تست Gemini API"""
-    test_message = "سلام، لطفاً فقط بگو 'API فعال است'"
-    result = ask_gemini(test_message)
-    return jsonify({
-        "test_message": test_message,
-        "gemini_response": result,
-        "status": "success" if not result.startswith('❌') else "error"
-    })
+@app.route('/test-ai', methods=['GET'])
+def test_ai():
+    """تست دستیار هوشمند"""
+    test_questions = [
+        "سلام! چطوری می‌تونی بهم کمک کنی؟",
+        "آیا می‌تونی در مورد هوش مصنوعی توضیح بدی؟",
+        "یک داستان کوتاه بنویس"
+    ]
+    
+    results = []
+    for question in test_questions:
+        result = ask_ai(question)
+        results.append({
+            "question": question,
+            "response": result[:200] + "..." if len(result) > 200 else result
+        })
+    
+    return jsonify({"tests": results})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
