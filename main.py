@@ -23,16 +23,13 @@ def ask_chatgpt(message, system_prompt=None):
         messages.append({'role': 'system', 'content': system_prompt})
     messages.append({'role': 'user', 'content': message})
     payload = {
-    'model': 'gpt-3.5-turbo',
-    'messages': [
-        {'role': 'user', 'content': message}
-    ]
-}
+        'model': 'gpt-3.5-turbo',
+        'messages': messages
+    }
 
     try:
         response = requests.post(url, json=payload, headers=headers)
         result = response.json()
-
         if 'choices' in result:
             return result['choices'][0]['message']['content']
         elif 'error' in result:
