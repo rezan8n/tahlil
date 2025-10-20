@@ -13,7 +13,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 def ask_chatgpt(message, system_prompt=None):
     url = 'https://api.openai.com/v1/chat/completions'
-    headers = {'Authorization': f'Bearer {OPENAI_API_KEY}'}
+    headers = {'Authorization': f'Bearer ' + OPENAI_API_KEY}
     messages = []
     if system_prompt:
         messages.append({'role': 'system', 'content': system_prompt})
@@ -42,6 +42,9 @@ def suggest_customers_for_new_drug(drug_name, df):
 @app.route('/', methods=['POST'])
 def webhook():
     data = request.get_json()
+    if not data or 'message' not in data:
+        return 'no message', 400
+
     chat_id = data['message']['chat']['id']
     text = data['message'].get('text', '')
     reply = '❓ پیام نامشخص بود.'
@@ -76,11 +79,10 @@ def webhook():
                   data={'chat_id': chat_id, 'text': reply})
     return 'ok'
 
-@app.route('/')
+@app.route('/', methods=['GET'])
 def home():
     return 'Bot is running'
 
-# ✅ اضافه‌شده برای اجرای Flask در Render
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
