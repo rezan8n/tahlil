@@ -60,7 +60,7 @@ def webhook():
     text = message.get('text', '')
     reply = '❓ پیام نامشخص بود.'
 
-    if 'document' in message:
+   if message.get('document') and 'file_id' in message['document']:
         file_id = message['document']['file_id']
         file_info = requests.get(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={file_id}').json()
         file_path = file_info['result']['file_path']
