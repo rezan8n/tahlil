@@ -69,6 +69,7 @@ def webhook():
         file_bytes = requests.get(file_url).content
 
         mime_type = mimetypes.guess_type(file_name)[0]
+        df = None
 
         try:
             if mime_type == 'application/vnd.ms-excel':
@@ -76,11 +77,26 @@ def webhook():
             elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
                 df = pd.read_excel(BytesIO(file_bytes), engine='openpyxl')
             else:
-                reply = "❌ فرمت فایل اکسل قابل شناسایی نیست. لطفاً فایل را با فرمت .xls یا .xlsx ارسال کنید."
-                df = None
+                reply = (
+                    "❌ فرمت فایل اکسل قابل شناسایی نیست.\n"
+                    "لطفاً فایل را با یکی از فرمت‌های زیر ارسال کنید:\n"
+                    "• ‎.xls (Excel 97-2003)\n"
+                    "• ‎.xlsx (Excel 2007 به بعد)"
+                )
+                requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
+                              data={'chat_id': chat_id, 'text': reply})
+                return 'ok'
         except Exception as e:
-            reply = f"❌ خطا در خواندن فایل اکسل:\n{str(e)}"
-            df = None
+            reply = (
+                "❌ خطا در خواندن فایل اکسل.\n"
+                "ممکن است فایل خراب باشد یا فرمت آن پشتیبانی نشود.\n"
+                "لطفاً فایل را با یکی از فرمت‌های زیر ارسال کنید:\n"
+                "• ‎.xls (Excel 97-2003)\n"
+                "• ‎.xlsx (Excel 2007 به بعد)"
+            )
+            requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
+                          data={'chat_id': chat_id, 'text': reply})
+            return 'ok'
 
         if df is not None:
             system_prompt = """
