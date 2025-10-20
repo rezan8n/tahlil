@@ -22,18 +22,19 @@ load_dotenv()
 app = Flask(__name__)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')  # تغییر نام متغیر
 
 # لاگ برای بررسی توکن‌ها
 logger.info(f"TELEGRAM_TOKEN تنظیم شده: {bool(TELEGRAM_TOKEN)}")
-logger.info(f"OPENAI_API_KEY تنظیم شده: {bool(OPENAI_API_KEY)}")
-if OPENAI_API_KEY:
-    logger.info(f"پیشوند API Key: {OPENAI_API_KEY[:10]}...")
+logger.info(f"DEEPSEEK_API_KEY تنظیم شده: {bool(DEEPSEEK_API_KEY)}")
+if DEEPSEEK_API_KEY:
+    logger.info(f"پیشوند API Key: {DEEPSEEK_API_KEY[:10]}...")
 
-def ask_chatgpt(message, system_prompt=None):
-    url = 'https://api.openai.com/v1/chat/completions'
+def ask_deepseek(message, system_prompt=None):
+    """استفاده از DeepSeek API به جای OpenAI"""
+    url = 'https://api.deepseek.com/v1/chat/completions'
     headers = {
-        'Authorization': f'Bearer {OPENAI_API_KEY}',
+        'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
         'Content-Type': 'application/json'
     }
     
@@ -43,45 +44,46 @@ def ask_chatgpt(message, system_prompt=None):
     messages.append({'role': 'user', 'content': message})
     
     payload = {
-        'model': 'gpt-3.5-turbo',
+        'model': 'deepseek-chat',
         'messages': messages,
-        'max_tokens': 1000
+        'max_tokens': 1000,
+        'stream': False
     }
 
     try:
-        logger.info(f"ارسال درخواست به OpenAI: {message[:100]}...")
+        logger.info(f"ارسال درخواست به DeepSeek: {message[:100]}...")
         
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         
         # لاگ کامل پاسخ
-        logger.info(f"OpenAI Status Code: {response.status_code}")
-        logger.info(f"OpenAI Response: {response.text}")
+        logger.info(f"DeepSeek Status Code: {response.status_code}")
         
         if response.status_code != 200:
             error_msg = f"HTTP {response.status_code}: {response.text}"
-            logger.error(f"خطای OpenAI: {error_msg}")
-            return f"❌ خطا از سمت OpenAI: {error_msg}"
+            logger.error(f"خطای DeepSeek: {error_msg}")
+            return f"❌ خطا از سمت DeepSeek: {error_msg}"
             
         result = response.json()
+        logger.info(f"DeepSeek Response: {result}")
         
         if 'choices' in result and len(result['choices']) > 0:
             reply = result['choices'][0]['message']['content']
-            logger.info(f"پاسخ موفق از OpenAI: {reply[:100]}...")
+            logger.info(f"پاسخ موفق از DeepSeek: {reply[:100]}...")
             return reply
         elif 'error' in result:
             error_msg = result['error'].get('message', 'خطای نامشخص')
-            logger.error(f"خطای OpenAI API: {error_msg}")
-            return f"❌ خطا از سمت OpenAI: {error_msg}"
+            logger.error(f"خطای DeepSeek API: {error_msg}")
+            return f"❌ خطا از سمت DeepSeek: {error_msg}"
         else:
-            logger.error("پاسخ نامعتبر از OpenAI")
-            return "❌ پاسخ نامعتبر از OpenAI دریافت شد."
+            logger.error("پاسخ نامعتبر از DeepSeek")
+            return "❌ پاسخ نامعتبر از DeepSeek دریافت شد."
             
     except requests.exceptions.Timeout:
-        logger.error("Timeout در ارتباط با OpenAI")
-        return "❌ timeout در ارتباط با OpenAI"
+        logger.error("Timeout در ارتباط با DeepSeek")
+        return "❌ timeout در ارتباط با DeepSeek"
     except Exception as e:
-        logger.error(f"خطا در اتصال به OpenAI: {str(e)}")
-        return f"❌ خطا در اتصال به OpenAI: {str(e)}"
+        logger.error(f"خطا در اتصال به DeepSeek: {str(e)}")
+        return f"❌ خطا در اتصال به DeepSeek: {str(e)}"
 
 def analyze_excel(df):
     df.columns = df.columns.str.strip()
@@ -93,7 +95,7 @@ def analyze_excel(df):
 def suggest_customers_for_new_drug(drug_name, df):
     df.columns = df.columns.str.strip()
     system_prompt = "شما یک تحلیل‌گر دارویی هستید. وظیفه شما تشخیص کاربرد داروی جدید و یافتن داروهای مشابه است."
-    description = ask_chatgpt(f"داروی جدید: {drug_name}", system_prompt)
+    description = ask_deepseek(f"داروی جدید: {drug_name}", system_prompt)
     similar_rows = df[df['شرح کالا'].str.contains(drug_name.split()[0], case=False, na=False)]
     customers = similar_rows['نام مشتری'].value_counts().head(5).index.tolist()
     return f"📦 داروی جدید: {drug_name}\n🔍 مشابه‌ها: {description}\n👥 مشتریان بالقوه:\n" + "\n".join(customers)
@@ -153,10 +155,10 @@ def webhook():
             اگر پیام مربوط به تحلیل فروش از فایل اکسل بود، فقط نوع تحلیل را به‌صورت یک کلمه برگردان (مثلاً: مجموع، پرفروش، تاریخ، مشتری، داروی جدید).
             اگر پیام عمومی بود، فقط بنویس: عمومی.
             """
-            intent = ask_chatgpt(text, system_prompt).strip()
+            intent = ask_deepseek(text, system_prompt).strip()
 
             if intent == 'عمومی':
-                reply = ask_chatgpt(text)
+                reply = ask_deepseek(text)
             elif intent == 'مجموع':
                 reply = analyze_excel(df)
             elif intent == 'داروی جدید':
@@ -164,7 +166,7 @@ def webhook():
             else:
                 reply = '❓ نیت شما مشخص نشد. لطفاً واضح‌تر بنویسید.'
     else:
-        reply = ask_chatgpt(text)
+        reply = ask_deepseek(text)
 
     requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
                   data={'chat_id': chat_id, 'text': reply})
@@ -176,13 +178,13 @@ def home():
 
 @app.route('/test')
 def test():
-    """Endpoint برای تست OpenAI"""
+    """Endpoint برای تست DeepSeek"""
     test_message = "سلام، این یک تست است. لطفاً پاسخ بده 'تست موفق'"
-    result = ask_chatgpt(test_message)
+    result = ask_deepseek(test_message)
     return {
         "status": "success",
         "test_result": result,
-        "openai_key_prefix": OPENAI_API_KEY[:10] + "..." if OPENAI_API_KEY else "Not set"
+        "deepseek_key_prefix": DEEPSEEK_API_KEY[:10] + "..." if DEEPSEEK_API_KEY else "Not set"
     }
 
 @app.route('/env-check')
@@ -190,8 +192,8 @@ def env_check():
     """بررسی تنظیمات محیطی"""
     return {
         "telegram_token_set": bool(TELEGRAM_TOKEN),
-        "openai_key_set": bool(OPENAI_API_KEY),
-        "openai_key_prefix": OPENAI_API_KEY[:10] + "..." if OPENAI_API_KEY else "Not set"
+        "deepseek_key_set": bool(DEEPSEEK_API_KEY),
+        "deepseek_key_prefix": DEEPSEEK_API_KEY[:10] + "..." if DEEPSEEK_API_KEY else "Not set"
     }
 
 if __name__ == '__main__':
