@@ -18,7 +18,10 @@ def ask_chatgpt(message, system_prompt=None):
     if system_prompt:
         messages.append({'role': 'system', 'content': system_prompt})
     messages.append({'role': 'user', 'content': message})
-    payload = {'model': 'gpt-3.5-turbo', 'messages': messages}
+    payload = {
+        'model': 'gpt-3.5-turbo-1106',  # مدل جدید و پایدار
+        'messages': messages
+    }
     response = requests.post(url, json=payload, headers=headers)
 
     try:
@@ -34,7 +37,6 @@ def analyze_excel(file_bytes):
     df = pd.read_excel(BytesIO(file_bytes))
     df.columns = df.columns.str.strip()
     df['جمع کل خالص'] = df['جمع کل خالص'].replace(',', '', regex=True).astype(float)
-
     total_sales = df['جمع کل خالص'].sum()
     top_item = df.groupby('شرح کالا')['جمع کل خالص'].sum().idxmax()
     return f'📊 مجموع فروش: {int(total_sales):,} تومان\n🏆 پرفروش‌ترین کالا: {top_item}'
@@ -50,7 +52,7 @@ def suggest_customers_for_new_drug(drug_name, df):
 @app.route('/', methods=['POST'])
 def webhook():
     data = request.get_json()
-    message = data.get('message') or data.get('edited_message')
+    message = data.get('message') or data.get('edited_message') or data.get('callback_query')
     if not message:
         return 'no message', 400
 
