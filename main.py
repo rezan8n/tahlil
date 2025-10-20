@@ -23,9 +23,11 @@ def ask_chatgpt(message, system_prompt=None):
         messages.append({'role': 'system', 'content': system_prompt})
     messages.append({'role': 'user', 'content': message})
     payload = {
-        'model': 'gpt-3.5-turbo',
-        'messages': messages
-    }
+    'model': 'gpt-3.5-turbo',
+    'messages': [
+        {'role': 'user', 'content': message}
+    ]
+}
 
     try:
         response = requests.post(url, json=payload, headers=headers)
