@@ -14,7 +14,10 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 def ask_chatgpt(message, system_prompt=None):
     url = 'https://api.openai.com/v1/chat/completions'
-    headers = {'Authorization': f'Bearer {OPENAI_API_KEY}'}
+    headers = {
+        'Authorization': f'Bearer {OPENAI_API_KEY}',
+        'Content-Type': 'application/json'
+    }
     messages = []
     if system_prompt:
         messages.append({'role': 'system', 'content': system_prompt})
@@ -23,16 +26,19 @@ def ask_chatgpt(message, system_prompt=None):
         'model': 'gpt-3.5-turbo',
         'messages': messages
     }
-    response = requests.post(url, json=payload, headers=headers)
 
     try:
+        response = requests.post(url, json=payload, headers=headers)
         result = response.json()
+
         if 'choices' in result:
             return result['choices'][0]['message']['content']
+        elif 'error' in result:
+            return f"❌ خطا از سمت OpenAI:\n{result['error'].get('message', 'خطای نامشخص')}"
         else:
-            return f"❌ خطا از سمت OpenAI:\n{result.get('error', {}).get('message', 'پاسخی دریافت نشد')}"
+            return "❌ پاسخ نامعتبر از OpenAI دریافت شد."
     except Exception as e:
-        return f"❌ خطا در پردازش پاسخ:\n{str(e)}"
+        return f"❌ خطا در اتصال به OpenAI:\n{str(e)}"
 
 def analyze_excel(df):
     df.columns = df.columns.str.strip()
@@ -86,7 +92,7 @@ def webhook():
                 requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
                               data={'chat_id': chat_id, 'text': reply})
                 return 'ok'
-        except Exception as e:
+        except Exception:
             reply = (
                 "❌ خطا در خواندن فایل اکسل.\n"
                 "ممکن است فایل خراب باشد یا فرمت آن پشتیبانی نشود.\n"
