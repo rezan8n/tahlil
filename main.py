@@ -4,6 +4,7 @@ import pandas as pd
 from io import BytesIO
 import os
 from dotenv import load_dotenv
+import mimetypes
 
 load_dotenv()
 app = Flask(__name__)
@@ -19,7 +20,7 @@ def ask_chatgpt(message, system_prompt=None):
         messages.append({'role': 'system', 'content': system_prompt})
     messages.append({'role': 'user', 'content': message})
     payload = {
-        'model': 'gpt-3.5-turbo-1106',  # مدل جدید و پایدار
+        'model': 'gpt-3.5-turbo-1106',
         'messages': messages
     }
     response = requests.post(url, json=payload, headers=headers)
@@ -33,8 +34,7 @@ def ask_chatgpt(message, system_prompt=None):
     except Exception as e:
         return f"❌ خطا در پردازش پاسخ:\n{str(e)}"
 
-def analyze_excel(file_bytes):
-    df = pd.read_excel(BytesIO(file_bytes), engine='xlrd')
+def analyze_excel(df):
     df.columns = df.columns.str.strip()
     df['جمع کل خالص'] = df['جمع کل خالص'].replace(',', '', regex=True).astype(float)
     total_sales = df['جمع کل خالص'].sum()
@@ -60,29 +60,44 @@ def webhook():
     text = message.get('text', '')
     reply = '❓ پیام نامشخص بود.'
 
-   if message.get('document') and 'file_id' in message['document']:
+    if message.get('document') and 'file_id' in message['document']:
         file_id = message['document']['file_id']
+        file_name = message['document']['file_name']
         file_info = requests.get(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={file_id}').json()
         file_path = file_info['result']['file_path']
         file_url = f'https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}'
         file_bytes = requests.get(file_url).content
-        df = pd.read_excel(BytesIO(file_bytes))
 
-        system_prompt = """
-        شما یک ربات فروش هوشمند هستید. وظیفه شما تشخیص نیت کاربر از پیام اوست.
-        اگر پیام مربوط به تحلیل فروش از فایل اکسل بود، فقط نوع تحلیل را به‌صورت یک کلمه برگردان (مثلاً: مجموع، پرفروش، تاریخ، مشتری، داروی جدید).
-        اگر پیام عمومی بود، فقط بنویس: عمومی.
-        """
-        intent = ask_chatgpt(text, system_prompt).strip()
+        mime_type = mimetypes.guess_type(file_name)[0]
 
-        if intent == 'عمومی':
-            reply = ask_chatgpt(text)
-        elif intent == 'مجموع':
-            reply = analyze_excel(file_bytes)
-        elif intent == 'داروی جدید':
-            reply = suggest_customers_for_new_drug(text, df)
-        else:
-            reply = '❓ نیت شما مشخص نشد. لطفاً واضح‌تر بنویسید.'
+        try:
+            if mime_type == 'application/vnd.ms-excel':
+                df = pd.read_excel(BytesIO(file_bytes), engine='xlrd')
+            elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                df = pd.read_excel(BytesIO(file_bytes), engine='openpyxl')
+            else:
+                reply = "❌ فرمت فایل اکسل قابل شناسایی نیست. لطفاً فایل را با فرمت .xls یا .xlsx ارسال کنید."
+                df = None
+        except Exception as e:
+            reply = f"❌ خطا در خواندن فایل اکسل:\n{str(e)}"
+            df = None
+
+        if df is not None:
+            system_prompt = """
+            شما یک ربات فروش هوشمند هستید. وظیفه شما تشخیص نیت کاربر از پیام اوست.
+            اگر پیام مربوط به تحلیل فروش از فایل اکسل بود، فقط نوع تحلیل را به‌صورت یک کلمه برگردان (مثلاً: مجموع، پرفروش، تاریخ، مشتری، داروی جدید).
+            اگر پیام عمومی بود، فقط بنویس: عمومی.
+            """
+            intent = ask_chatgpt(text, system_prompt).strip()
+
+            if intent == 'عمومی':
+                reply = ask_chatgpt(text)
+            elif intent == 'مجموع':
+                reply = analyze_excel(df)
+            elif intent == 'داروی جدید':
+                reply = suggest_customers_for_new_drug(text, df)
+            else:
+                reply = '❓ نیت شما مشخص نشد. لطفاً واضح‌تر بنویسید.'
     else:
         reply = ask_chatgpt(text)
 
