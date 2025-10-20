@@ -34,7 +34,7 @@ def ask_chatgpt(message, system_prompt=None):
         return f"❌ خطا در پردازش پاسخ:\n{str(e)}"
 
 def analyze_excel(file_bytes):
-    df = pd.read_excel(BytesIO(file_bytes), engine='openpyxl')
+    df = pd.read_excel(BytesIO(file_bytes), engine='xlrd')
     df.columns = df.columns.str.strip()
     df['جمع کل خالص'] = df['جمع کل خالص'].replace(',', '', regex=True).astype(float)
     total_sales = df['جمع کل خالص'].sum()
