@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 import logging
 import sys
-import google.generativeai as genai
+import json
 
 # تنظیمات لاگ
 logging.basicConfig(
@@ -20,52 +20,31 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# پیکربندی Gemini
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    logger.info("✅ Gemini پیکربندی شد")
-else:
-    logger.warning("❌ Gemini API Key تنظیم نشده")
-
-def ask_gemini_official(message):
-    """استفاده از کتابخانه رسمی Google"""
+def ask_gemini_new_api(message):
+    """استفاده از API جدید Google AI"""
     if not GEMINI_API_KEY:
         return "❌ Gemini API Key تنظیم نشده"
     
-    try:
-        # استفاده از مدل پیش‌فرض
-        model = genai.GenerativeModel('gemini-pro')
-        
-        logger.info(f"📤 ارسال به Gemini: {message}")
-        response = model.generate_content(message)
-        
-        logger.info("✅ پاسخ دریافت شد")
-        return response.text
-        
-    except Exception as e:
-        error_msg = f"❌ خطا در Gemini: {str(e)}"
-        logger.error(error_msg)
-        return error_msg
-
-def ask_gemini_direct(message):
-    """استفاده مستقیم از API (برای تست)"""
-    if not GEMINI_API_KEY:
-        return "❌ Gemini API Key تنظیم نشده"
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    # استفاده از endpoint جدید
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
     
     headers = {
         'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_API_KEY
     }
     
     data = {
         "contents": [{
             "parts": [{"text": message}]
-        }]
+        }],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 1000,
+        }
     }
     
     try:
-        logger.info(f"📤 ارسال مستقیم به Gemini: {message}")
+        logger.info(f"📤 ارسال به Gemini جدید: {message}")
         response = requests.post(url, json=data, headers=headers, timeout=30)
         
         logger.info(f"📥 وضعیت: {response.status_code}")
@@ -74,15 +53,60 @@ def ask_gemini_direct(message):
             result = response.json()
             if 'candidates' in result and result['candidates']:
                 reply = result['candidates'][0]['content']['parts'][0]['text']
-                logger.info("✅ پاسخ مستقیم دریافت شد")
+                logger.info("✅ پاسخ از API جدید دریافت شد")
                 return reply
             else:
                 return "❌ ساختار پاسخ نامعتبر"
+                
         else:
-            return f"❌ خطا: {response.status_code} - {response.text}"
+            error_info = response.json().get('error', {})
+            error_msg = error_info.get('message', 'خطای نامشخص')
+            return f"❌ خطا: {response.status_code} - {error_msg}"
             
     except Exception as e:
         return f"❌ خطا در ارتباط: {str(e)}"
+
+def ask_gemini_old_api(message):
+    """استفاده از API قدیمی برای تست"""
+    if not GEMINI_API_KEY:
+        return "❌ Gemini API Key تنظیم نشده"
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    
+    data = {
+        "contents": [{
+            "parts": [{"text": message}]
+        }]
+    }
+    
+    try:
+        response = requests.post(url, json=data, timeout=20)
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"❌ خطا در API قدیمی: {response.status_code}"
+            
+    except Exception as e:
+        return f"❌ خطا: {str(e)}"
+
+def get_available_models():
+    """دریافت لیست مدل‌های در دسترس"""
+    if not GEMINI_API_KEY:
+        return []
+    
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
+    headers = {'x-goog-api-key': GEMINI_API_KEY}
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=20)
+        if response.status_code == 200:
+            models_data = response.json()
+            return [model['name'] for model in models_data.get('models', [])]
+        return []
+    except:
+        return []
 
 @app.route('/', methods=['POST'])
 def webhook():
@@ -99,22 +123,22 @@ def webhook():
         text = message.get('text', '')
         
         if text == '/start':
-            reply = '''🤖 سلام! من یک چت‌بات هوشمندم که با Google Gemini کار می‌کنم.
+            reply = '''🤖 سلام! من یک چت‌بات هوشمندم.
 
-می‌تونی هر سوالی ازم بپرسی:
-• سوالات علمی
-• کمک در نوشتن  
-• توضیح مفاهیم
-• و هر چیز دیگه‌ای!
+در حال تست اتصال به سرویس‌های هوش مصنوعی هستم.
 
-یه سوال بپرس شروع کنیم...'''
+لطفاً کمی صبر کن...'''
         else:
-            # اول از کتابخانه رسمی استفاده می‌کنیم
-            reply = ask_gemini_official(text)
+            # استفاده از API جدید
+            reply = ask_gemini_new_api(text)
             
-            # اگر خطا داد، از API مستقیم استفاده می‌کنیم
+            # اگر خطا داد، از پاسخ ثابت استفاده کن
             if reply.startswith('❌'):
-                reply = ask_gemini_direct(text)
+                reply = f'''🤖 سوال جالبی پرسیدی: "{text}"
+
+در حال حاضر سرویس هوش مصنوعی در دسترس نیست.
+
+اما به زودی این قابلیت اضافه خواهد شد!'''
         
         requests.post(
             f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
@@ -129,41 +153,53 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def home():
-    return '🤖 چت‌بات هوشمند فعال است!'
+    return '🤖 چت‌بات در حال توسعه'
 
-@app.route('/test', methods=['GET'])
-def test():
-    """تست سلامت"""
-    return jsonify({
-        "status": "active", 
-        "telegram_token": "SET" if TELEGRAM_TOKEN else "NOT SET",
-        "gemini_key": "SET" if GEMINI_API_KEY else "NOT SET"
-    })
-
-@app.route('/test-gemini-official', methods=['GET'])
-def test_gemini_official():
-    """تست با کتابخانه رسمی"""
-    test_message = "سلام! لطفاً فقط بگو 'Official Library Works'"
-    result = ask_gemini_official(test_message)
+@app.route('/test-new-api', methods=['GET'])
+def test_new_api():
+    """تست API جدید"""
+    test_message = "سلام! لطفاً فقط بگو 'API New Works'"
+    result = ask_gemini_new_api(test_message)
     
     return jsonify({
-        "method": "official_library",
+        "api_version": "v1beta (new)",
+        "model": "gemini-1.5-flash-latest", 
         "test_message": test_message,
         "response": result,
         "status": "success" if not result.startswith('❌') else "error"
     })
 
-@app.route('/test-gemini-direct', methods=['GET'])
-def test_gemini_direct():
-    """تست با API مستقیم"""
-    test_message = "سلام! لطفاً فقط بگو 'Direct API Works'"
-    result = ask_gemini_direct(test_message)
+@app.route('/test-old-api', methods=['GET'])
+def test_old_api():
+    """تست API قدیمی"""
+    test_message = "سلام! لطفاً فقط بگو 'API Old Works'"
+    result = ask_gemini_old_api(test_message)
     
     return jsonify({
-        "method": "direct_api", 
-        "test_message": test_message,
+        "api_version": "v1beta (old)",
+        "model": "gemini-pro",
+        "test_message": test_message, 
         "response": result,
         "status": "success" if not result.startswith('❌') else "error"
+    })
+
+@app.route('/list-models', methods=['GET'])
+def list_models():
+    """لیست مدل‌های در دسترس"""
+    models = get_available_models()
+    return jsonify({
+        "status": "success" if models else "error",
+        "available_models": models
+    })
+
+@app.route('/debug', methods=['GET'])
+def debug():
+    """صفحه دیباگ"""
+    return jsonify({
+        "status": "active",
+        "telegram_token_set": bool(TELEGRAM_TOKEN),
+        "gemini_key_set": bool(GEMINI_API_KEY),
+        "message": "سیستم پایه فعال است"
     })
 
 if __name__ == '__main__':
