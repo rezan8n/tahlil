@@ -17,65 +17,103 @@ load_dotenv()
 app = Flask(__name__)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+# استفاده مستقیم از API Key برای تست
+GEMINI_API_KEY = "AIzaSyC9GffwbFXMLR_oHhdYwlnsyOs8I3YDbyc"
 
-def get_ai_response(message):
-    """پاسخ‌های هوشمند ساده بدون API خارجی"""
-    message_lower = message.lower().strip()
+def test_gemini_detailed():
+    """تست دقیق Gemini با لاگ کامل"""
+    models = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest", 
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ]
     
-    # پاسخ‌های از پیش تعریف شده
-    responses = {
-        'سلام': 'سلام! خوش اومدی! 🤖\nمن یه ربات ساده‌ام که می‌تونه بهت کمک کنه.',
+    results = []
+    
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        headers = {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': GEMINI_API_KEY
+        }
         
-        'چطوری': 'خوبم ممنون! 😊\nچطور می‌تونم کمک کنم؟',
+        data = {
+            "contents": [{
+                "parts": [{"text": "سلام! لطفاً فقط بگو 'موفق'"}]
+            }]
+        }
         
-        'کمک': '''📋 راهنمای ربات:
+        try:
+            logger.info(f"🔍 تست مدل: {model}")
+            response = requests.post(url, json=data, headers=headers, timeout=15)
+            
+            result = {
+                "model": model,
+                "status_code": response.status_code,
+                "success": False
+            }
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                if 'candidates' in response_data and response_data['candidates']:
+                    reply = response_data['candidates'][0]['content']['parts'][0]['text']
+                    result["success"] = True
+                    result["response"] = reply
+                    logger.info(f"✅ {model} - موفق: {reply}")
+                else:
+                    result["error"] = "ساختار پاسخ نامعتبر"
+                    logger.error(f"❌ {model} - ساختار پاسخ نامعتبر")
+            else:
+                error_info = response.json().get('error', {})
+                result["error"] = error_info.get('message', 'خطای نامشخص')
+                logger.error(f"❌ {model} - خطا: {result['error']}")
+                
+        except Exception as e:
+            result = {
+                "model": model,
+                "status_code": 0,
+                "success": False,
+                "error": str(e)
+            }
+            logger.error(f"🔥 {model} - خطای ارتباط: {str(e)}")
+        
+        results.append(result)
+    
+    return results
 
-🤖 **درباره من:**
-• یه ربات ساده و مفید
-• آماده پاسخ به سوالاتت
-• در حال توسعه قابلیت‌های بیشتر
-
-💡 **کارهایی که می‌تونم انجام بدم:**
-• پاسخ به سوالات متداول
-• ارائه اطلاعات مفید
-• راهنمایی در استفاده از ربات
-
-🔜 **به زودی:**
-• تحلیل فایل‌های اکسل
-• اتصال به هوش مصنوعی
-• قابلیت‌های پیشرفته‌تر
-
-سوالت رو بپرس!''',
-        
-        'خداحافظ': 'خداحافظ! 🙋‍♂️\nامیدوارم مفید بوده باشم.',
-        
-        'اسمت چیه': 'من یه ربات تلگرامی هستم که دوست دارم به کاربران کمک کنم! 🤖',
-        
-        'چیکار میتونی بکنی': 'میتونم:\n• راهنمایی کنم\n• اطلاعات مفید بدم\n• به سوالاتت پاسخ بدم\n• و به زودی خیلی چیزای دیگه! 🚀'
+def ask_gemini_simple(message):
+    """ساده‌ترین نسخه Gemini"""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    headers = {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_API_KEY
     }
     
-    # جستجوی پاسخ در دیکشنری
-    for key, response in responses.items():
-        if key in message_lower:
-            return response
+    data = {
+        "contents": [{
+            "parts": [{"text": message}]
+        }]
+    }
     
-    # پاسخ پیش‌فرض برای سوالات دیگر
-    return f'''🤔 سوال جالبی پرسیدی: "{message}"
-
-در حال حاضر من یک ربات پایه‌ام و قابلیت پاسخ به سوالات پیچیده رو ندارم.
-
-اما می‌تونی ازم بپرسی:
-• "کمک" - راهنمای کامل
-• "چیکار میتونی بکنی" - قابلیت‌های من
-
-به زودی هوش مصنوعی قدرتمندی به ربات اضافه میشه! 💪'''
+    try:
+        response = requests.post(url, json=data, headers=headers, timeout=20)
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"❌ خطا: {response.status_code} - {response.text}"
+            
+    except Exception as e:
+        return f"❌ خطای ارتباط: {str(e)}"
 
 @app.route('/', methods=['POST'])
 def webhook():
-    """وب‌هوک اصلی تلگرام"""
+    """وب‌هوک اصلی"""
     try:
         data = request.get_json()
-        logger.info(f"📩 دریافت از تلگرام: {data}")
+        logger.info("📩 دریافت از تلگرام")
         
         message = data.get('message') or data.get('edited_message')
         if not message:
@@ -85,66 +123,63 @@ def webhook():
         text = message.get('text', '')
         
         if text == '/start':
-            reply = '''🤖 سلام! به ربات من خوش اومدی!
+            reply = '''🤖 به ربات تست Gemini خوش اومدی!
 
-من در حال حاضر یک ربات پایه‌ام که می‌تونه:
-• به سوالات ساده پاسخ بده
-• راهنمایی کنه
-• اطلاعات مفید ارائه بده
+دستورات:
+/test - تست کامل API
+/simple [متن] - تست ساده
+/status - وضعیت'''
+            
+        elif text == '/test':
+            reply = "🔍 در حال تست API... لطفاً صبر کن"
+            # تست کامل در پس‌زمینه
+            test_results = test_gemini_detailed()
+            
+            # ساخت گزارش
+            report = ["📊 نتیجه تست Gemini API:"]
+            for result in test_results:
+                if result["success"]:
+                    report.append(f"✅ {result['model']}: موفق")
+                else:
+                    report.append(f"❌ {result['model']}: {result.get('error', 'خطا')}")
+            
+            reply = "\n".join(report)
+            
+        elif text.startswith('/simple '):
+            user_message = text.replace('/simple ', '')
+            reply = ask_gemini_simple(user_message)
+            
+        elif text == '/status':
+            reply = f"""🔧 وضعیت سرویس:
+            
+API Key: {'✅ تنظیم شده' if GEMINI_API_KEY else '❌ تنظیم نشده'}
+تلگرام: {'✅ فعال' if TELEGRAM_TOKEN else '❌ غیرفعال'}
 
-💡 **دستورات سریع:**
-"کمک" - راهنمای کامل
-"چیکار میتونی بکنی" - قابلیت‌ها
-
-به زودی قابلیت‌های پیشرفته‌تری اضافه میشه! 🚀'''
+برای تست از /test استفاده کن"""
+            
         else:
-            reply = get_ai_response(text)
+            reply = ask_gemini_simple(text)
         
-        # ارسال پاسخ به کاربر
         requests.post(
             f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
             data={'chat_id': chat_id, 'text': reply}
         )
         
-        logger.info(f"✅ پاسخ ارسال شد: {reply[:50]}...")
         return 'ok'
         
     except Exception as e:
-        logger.error(f"🔥 خطا در وب‌هوک: {str(e)}")
+        logger.error(f"خطا در وب‌هوک: {str(e)}")
         return 'error', 500
 
 @app.route('/', methods=['GET'])
 def home():
-    return '🤖 ربات پایه فعال است!'
+    return '🤖 ربات تست Gemini فعال است'
 
-@app.route('/test', methods=['GET'])
-def test():
-    """تست سلامت"""
-    return jsonify({
-        "status": "active", 
-        "telegram_token": "SET" if TELEGRAM_TOKEN else "NOT SET",
-        "message": "ربات پایه فعال است"
-    })
-
-@app.route('/test-response', methods=['GET'])
-def test_response():
-    """تست سیستم پاسخ‌دهی"""
-    test_messages = [
-        "سلام",
-        "کمک", 
-        "چیکار میتونی بکنی",
-        "سوال تست"
-    ]
-    
-    results = []
-    for msg in test_messages:
-        response = get_ai_response(msg)
-        results.append({
-            "question": msg,
-            "response": response[:100] + "..." if len(response) > 100 else response
-        })
-    
-    return jsonify({"tests": results})
+@app.route('/api-test', methods=['GET'])
+def api_test():
+    """تست API از طریق مرورگر"""
+    results = test_gemini_detailed()
+    return jsonify({"test_results": results})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
