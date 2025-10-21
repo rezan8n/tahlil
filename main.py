@@ -26,50 +26,42 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 # دیکشنری برای ذخیره آخرین فایل هر کاربر
 user_sessions = {}
 
-def ask_gemini(message, system_prompt=None):
-    """Google Gemini API"""
+def ask_gemini_simple(message):
+    """نسخه ساده‌تر برای تست"""
     if not GEMINI_API_KEY:
         return "❌ Gemini API Key تنظیم نشده"
     
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={GEMINI_API_KEY}'
     
-    contents = []
-    if system_prompt:
-        contents.append({
-            "parts": [{"text": system_prompt}],
-            "role": "user"
-        })
-    
-    contents.append({
-        "parts": [{"text": message}],
-        "role": "user"
-    })
-    
+    # ساده‌ترین ساختار ممکن
     payload = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 2000
-        }
+        "contents": [{
+            "parts": [{"text": message}]
+        }]
     }
     
     try:
-        logger.info(f"ارسال درخواست به Gemini: {message[:100]}...")
-        response = requests.post(url, json=payload, timeout=45)
+        logger.info(f"ارسال درخواست به Gemini: {message}")
+        response = requests.post(url, json=payload, timeout=20)
+        
+        logger.info(f"Status Code: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            if 'candidates' in result and len(result['candidates']) > 0:
-                if 'content' in result['candidates'][0] and 'parts' in result['candidates'][0]['content']:
-                    reply = result['candidates'][0]['content']['parts'][0]['text']
-                    return reply
-        elif response.status_code == 429:
-            return "❌ سقف استفاده رایگان تمام شده. لطفاً فردا مجدد تلاش کنید."
-        
-        return f"❌ خطا از Gemini: {response.status_code}"
+            if 'candidates' in result and result['candidates']:
+                reply = result['candidates'][0]['content']['parts'][0]['text']
+                logger.info(f"✅ پاسخ: {reply}")
+                return reply
+            else:
+                return "❌ ساختار پاسخ نامعتبر"
+        else:
+            error_msg = f"❌ خطا: {response.status_code}"
+            if response.text:
+                error_msg += f" - {response.text}"
+            return error_msg
             
     except Exception as e:
-        return f"❌ خطا در اتصال: {str(e)}"
+        return f"❌ خطا: {str(e)}"
 
 def get_user_session(chat_id):
     """دریافت یا ایجاد سشن کاربر"""
@@ -81,120 +73,63 @@ def get_user_session(chat_id):
         }
     return user_sessions[chat_id]
 
-def cleanup_old_sessions():
-    """پاک کردن سشن‌های قدیمی (24 ساعت)"""
-    current_time = time.time()
-    expired_users = []
-    
-    for chat_id, session in user_sessions.items():
-        if current_time - session['last_activity'] > 24 * 60 * 60:  # 24 ساعت
-            expired_users.append(chat_id)
-    
-    for chat_id in expired_users:
-        del user_sessions[chat_id]
-        logger.info(f"سشن کاربر {chat_id} پاک شد")
-
 def analyze_data_with_ai(question, df, file_name):
     """تحلیل داده‌ها با هوش مصنوعی"""
     try:
-        # خلاصه‌ای از داده‌ها برای AI
-        data_summary = f"""
-        کاربر یک سوال درباره داده‌های اکسل دارد:
+        # خلاصه ساده از داده‌ها
+        data_info = f"""
+        کاربر این سوال را پرسیده: {question}
 
-        مشخصات فایل: {file_name}
-        تعداد ردیف‌ها: {len(df)}
-        تعداد ستون‌ها: {len(df.columns)}
-        نام ستون‌ها: {', '.join(df.columns.tolist())}
-        
-        نمونه‌ای از داده‌ها (3 ردیف اول):
-        {df.head(3).to_string()}
+        داده‌های فایل {file_name}:
+        - تعداد سطرها: {len(df)}
+        - تعداد ستون‌ها: {len(df.columns)} 
+        - ستون‌ها: {', '.join(df.columns.tolist())}
 
-        سوال کاربر: {question}
-
-        لطفاً بر اساس داده‌های فوق به سوال کاربر پاسخ دقیق و مفید دهید.
-        اگر اطلاعات کافی در داده‌ها نیست، صادقانه بگویید.
-        از اعداد و ارقام دقیق استفاده کنید.
+        لطفاً با توجه به این داده‌ها پاسخ دهید.
+        اگر اطلاعات کافی نیست، بگویید چه داده‌ای نیاز است.
         """
         
-        system_prompt = """
-        شما یک تحلیل‌گر داده حرفه‌ای هستید. وظیفه شما تحلیل داده‌های اکسل و پاسخ به سوالات کاربر است.
-
-        ویژگی‌های شما:
-        - پاسخ‌های دقیق بر اساس داده‌ها
-        - استفاده از اعداد و ارقام واقعی
-        - توضیحات واضح و قابل فهم
-        - پیشنهادات عملی برای تحلیل بیشتر
-
-        اگر سوال کاربر نیاز به محاسبه خاصی دارد، آن را انجام دهید.
-        اگر داده‌ها ناقص هستند، صادقانه بیان کنید.
-        """
-        
-        return ask_gemini(data_summary, system_prompt)
+        return ask_gemini_simple(data_info)
         
     except Exception as e:
         return f"❌ خطا در تحلیل داده: {str(e)}"
 
 def ask_ai(message, chat_id):
-    """دستیار هوشمند با در نظر گرفتن سشن کاربر"""
+    """دستیار هوشمند"""
     session = get_user_session(chat_id)
-    session['last_activity'] = time.time()
     
-    # اگر کاربر فایل اکسل دارد
+    # اگر کاربر فایل دارد و سوال مربوط به داده‌هاست
     if session['current_df'] is not None:
-        df = session['current_df']
-        file_name = session['file_name']
-        
-        # کلمات کلیدی مربوط به تحلیل داده
-        data_keywords = [
-            'تحلیل', 'آنالیز', 'فروش', 'کالا', 'محصول', 'مشتری', 'داده', 'اکسل',
-            'فایل', 'جدول', 'آمار', 'گزارش', 'نتایج', 'تحلیل کن', 'چند تا', 
-            'چقدر', 'میانگین', 'مجموع', 'مقدار', 'تعداد', 'کدوم', 'چه', 'چگونه',
-            'نمایش', 'نشان', 'بگو', 'بفرما', 'محاسبه', 'محاسبه کن'
-        ]
-        
+        data_keywords = ['تحلیل', 'فروش', 'کالا', 'مشتری', 'داده', 'اکسل', 'چقدر', 'چند', 'کدوم', 'آمار']
         message_lower = message.lower()
         
-        # اگر سوال مربوط به داده‌هاست
         if any(keyword in message_lower for keyword in data_keywords):
             logger.info(f"تحلیل داده برای کاربر {chat_id}")
-            return analyze_data_with_ai(message, df, file_name)
-        
-        # اگر کاربر می‌خواهد فایل جدید بفرستد
-        if any(word in message_lower for word in ['فایل جدید', 'اکسل جدید', 'فایل دیگه']):
-            session['current_df'] = None
-            session['file_name'] = None
-            return "✅ فایل قبلی پاک شد. می‌تونی فایل اکسل جدید رو برام بفرستی."
+            return analyze_data_with_ai(message, session['current_df'], session['file_name'])
     
     # سوال عمومی
-    system_prompt = """
-    شما یک دستیار هوشمند و مفید هستید. به زبان فارسی روان و سلیس پاسخ دهید.
+    result = ask_gemini_simple(message)
     
-    اگر کاربر سوالی درباره داده‌های اکسل دارد اما فایلی ارسال نکرده است، 
-    به او یادآوری کنید که ابتدا فایل اکسل را ارسال کند.
-    """
-    
-    result = ask_gemini(message, system_prompt)
-    
-    # اگر Gemini خطا داد
     if result.startswith('❌'):
+        # پاسخ fallback
         if session['current_df'] is not None:
-            return f"""🤔 سوال جالبی پرسیدی!
+            return f"""📊 در حال کار بر روی فایل: {session['file_name']}
 
-برای تحلیل داده‌ها، می‌تونی سوالاتت رو در مورد فایل "{session['file_name']}" بپرسی.
-
-مثلاً:
-• "پرفروش‌ترین کالا کدومه؟"
-• "مجموع فروش چقدر شده؟" 
+می‌تونی در مورد این فایل سوال بپرسی:
+• "پرفروش‌ترین کالا چیه؟"
+• "مجموع فروش چقدره؟" 
 • "آمار مشتریان رو بگو"
 
-یا اگر می‌خوای فایل جدید بفرستی، بگو: "فایل جدید" """
+یا هر سوال عمومی‌ای داری بپرس!"""
         else:
-            return f"""🤖 سوال جالبی پرسیدی: "{message}"
+            return """🤖 به ربات خوش اومدی!
 
-برای استفاده از قابلیت تحلیل داده‌ها، لطفاً اول یک فایل اکسل برام بفرست.
+می‌تونی:
+📁 فایل اکسل بفرستی تا تحلیلش کنم
+💬 سوالات متنی ازم بپرسی
 
-پس از ارسال فایل، می‌تونی هر سوالی در مورد داده‌هات ازم بپرسی!"""
-
+فایل اکسل رو بفرست یا سوالت رو بپرس!"""
+    
     return result
 
 def analyze_excel_basic(df, file_name):
@@ -202,23 +137,27 @@ def analyze_excel_basic(df, file_name):
     try:
         df.columns = df.columns.str.strip()
         
-        analysis_parts = []
-        analysis_parts.append(f"📋 فایل '{file_name}' دریافت شد!")
-        analysis_parts.append(f"تعداد ردیف‌ها: {len(df):,}")
-        analysis_parts.append(f"تعداد ستون‌ها: {len(df.columns)}")
-        analysis_parts.append(f"📊 ستون‌های موجود:")
+        analysis = [
+            f"📋 فایل '{file_name}' دریافت شد!",
+            f"تعداد ردیف‌ها: {len(df):,}",
+            f"تعداد ستون‌ها: {len(df.columns)}",
+            "",
+            "📊 ستون‌ها:",
+        ]
         
         for i, col in enumerate(df.columns.tolist(), 1):
-            analysis_parts.append(f"  {i}. {col}")
+            analysis.append(f"{i}. {col}")
+            
+        analysis.extend([
+            "",
+            "💡 حالا می‌تونی در مورد داده‌ها سوال کنی:",
+            "• 'پرفروش‌ترین کالا کدومه؟'",
+            "• 'مجموع فروش چقدر شده؟'", 
+            "• 'آمار مشتریان رو بگو'",
+            "• 'تعداد تراکنش‌ها چقدره؟'"
+        ])
         
-        analysis_parts.append("\n💡 حالا می‌تونی در مورد این داده‌ها ازم سوال کنی!")
-        analysis_parts.append("مثلاً:")
-        analysis_parts.append("• 'پرفروش‌ترین کالا کدومه؟'")
-        analysis_parts.append("• 'مجموع فروش چقدر شده؟'")
-        analysis_parts.append("• 'آمار مشتریان رو بگو'")
-        analysis_parts.append("• 'تعداد تراکنش‌ها چقدره؟'")
-        
-        return '\n'.join(analysis_parts)
+        return '\n'.join(analysis)
         
     except Exception as e:
         return f'❌ خطا در تحلیل فایل: {str(e)}'
@@ -238,16 +177,14 @@ def webhook():
         text = message.get('text', '')
         reply = '❓ پیام نامشخص بود.'
 
-        # دریافت سشن کاربر
         session = get_user_session(chat_id)
-        session['last_activity'] = time.time()
 
         if message.get('document'):
             # پردازش فایل اکسل
             file_id = message['document']['file_id']
             file_name = message['document']['file_name']
             
-            logger.info(f"دریافت فایل از کاربر {chat_id}: {file_name}")
+            logger.info(f"دریافت فایل: {file_name}")
             
             file_info = requests.get(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={file_id}').json()
             file_path = file_info['result']['file_path']
@@ -263,7 +200,7 @@ def webhook():
                 elif mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
                     df = pd.read_excel(BytesIO(file_bytes), engine='openpyxl')
                 else:
-                    reply = "❌ فرمت فایل پشتیبانی نمی‌شه. لطفاً فایل اکسل (.xls یا .xlsx) بفرستید."
+                    reply = "❌ لطفاً فایل اکسل (.xls یا .xlsx) بفرستید."
                     requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
                                   data={'chat_id': chat_id, 'text': reply})
                     return 'ok'
@@ -274,21 +211,16 @@ def webhook():
                 return 'ok'
 
             if df is not None:
-                # ذخیره فایل در سشن کاربر
                 session['current_df'] = df
                 session['file_name'] = file_name
                 session['last_activity'] = time.time()
-                
                 reply = analyze_excel_basic(df, file_name)
 
         else:
             # پردازش پیام متنی
             reply = ask_ai(text, chat_id)
 
-        # پاکسازی سشن‌های قدیمی
-        cleanup_old_sessions()
-
-        # ارسال پاسخ به کاربر
+        # ارسال پاسخ
         requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
                       data={'chat_id': chat_id, 'text': reply})
         return 'ok'
@@ -299,33 +231,40 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def home():
-    return '🤖 دستیار هوشمند با حافظه جلسه فعال است!'
+    return '🤖 ربات فعال است!'
 
 @app.route('/debug', methods=['GET'])
 def debug():
     """صفحه دیباگ"""
-    cleanup_old_sessions()
     debug_info = {
         "status": "active",
         "telegram_token_set": bool(TELEGRAM_TOKEN),
         "gemini_key_set": bool(GEMINI_API_KEY),
         "active_sessions": len(user_sessions),
-        "active_users": list(user_sessions.keys())
+        "message": "سیستم آماده است"
     }
     return jsonify(debug_info)
 
-@app.route('/test-session', methods=['GET'])
-def test_session():
-    """تست سشن"""
-    test_chat_id = 12345
-    session = get_user_session(test_chat_id)
-    session['current_df'] = "TEST_DF"
-    session['file_name'] = "test.xlsx"
+@app.route('/test-gemini', methods=['GET'])
+def test_gemini():
+    """تست Gemini API"""
+    test_message = "سلام! لطفاً فقط بگو 'ربات فعال است'"
+    result = ask_gemini_simple(test_message)
     
     return jsonify({
-        "session_created": True,
-        "chat_id": test_chat_id,
-        "file_name": session['file_name']
+        "test_message": test_message,
+        "gemini_response": result,
+        "status": "success" if not result.startswith('❌') else "error",
+        "gemini_key_set": bool(GEMINI_API_KEY)
+    })
+
+@app.route('/test-simple', methods=['GET'])
+def test_simple():
+    """تست ساده"""
+    return jsonify({
+        "status": "active",
+        "message": "سرور کار می‌کند",
+        "timestamp": time.time()
     })
 
 if __name__ == '__main__':
