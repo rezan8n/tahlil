@@ -21,7 +21,7 @@ def send_telegram(chat_id, text):
 
 def ask_gemini(message):
     """ارسال پیام به Gemini و دریافت پاسخ"""
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}'
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}'
     headers = {'Content-Type': 'application/json'}
     payload = {
         "contents": [
@@ -56,7 +56,6 @@ def webhook():
         return 'ok'
 
     except Exception as e:
-        # ارسال خطای داخلی به تلگرام
         chat_id = data.get('message', {}).get('chat', {}).get('id')
         if chat_id:
             send_telegram(chat_id, f"❌ خطای داخلی:\n{str(e)}")
